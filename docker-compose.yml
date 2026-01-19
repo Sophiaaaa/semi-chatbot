@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: semi-ai-chatbot
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      # 如果 Ollama 运行在宿主机上，请使用 http://host.docker.internal:11434/api/chat
+      # Linux 下可能需要额外配置 extra_hosts，或者直接使用宿主机 IP
+      - LLM_API_URL=http://host.docker.internal:11434/api/chat
+      - LLM_MODEL=deepseek-r1:32b
+    volumes:
+      # 持久化数据库文件
+      - ./kpi_chatbot.db:/app/kpi_chatbot.db
+      # 挂载配置文件，方便修改后重启生效
+      - ./config:/app/config
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

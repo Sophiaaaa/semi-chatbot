@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="h-full">
+<head>
+    <meta charset="utf-8" />
+    <title>KPI 智能查询助手</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+        * { box-sizing: border-box; }
+        html, body { height: 100%; margin: 0; }
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background-color: #f9fafb;
+            color: #1f2937;
+        }
+        .h-full { height: 100%; }
+        .bg-gray-50 { background-color: #f9fafb; }
+        .bg-white { background-color: #ffffff; }
+        .bg-gray-100 { background-color: #f3f4f6; }
+        .bg-blue-50 { background-color: #eff6ff; }
+        .bg-blue-600 { background-color: #2563eb; }
+        .bg-blue-700 { background-color: #1d4ed8; }
+        .text-gray-800 { color: #1f2937; }
+        .text-gray-700 { color: #374151; }
+        .text-gray-600 { color: #4b5563; }
+        .text-gray-500 { color: #6b7280; }
+        .text-gray-400 { color: #9ca3af; }
+        .text-white { color: #ffffff; }
+        .flex { display: flex; }
+        .flex-col { flex-direction: column; }
+        .flex-1 { flex: 1 1 0%; }
+        .items-center { align-items: center; }
+        .items-start { align-items: flex-start; }
+        .items-end { align-items: flex-end; }
+        .justify-between { justify-content: space-between; }
+        .justify-start { justify-content: flex-start; }
+        .justify-end { justify-content: flex-end; }
+        .max-w-4xl { max-width: 56rem; }
+        .w-full { width: 100%; }
+        .w-8 { width: 2rem; }
+        .h-8 { height: 2rem; }
+        .rounded-full { border-radius: 9999px; }
+        .rounded-lg { border-radius: 0.5rem; }
+        .rounded-xl { border-radius: 0.75rem; }
+        .rounded-2xl { border-radius: 1rem; }
+        .border { border-width: 1px; border-style: solid; border-color: #e5e7eb; }
+        .border-b { border-bottom-width: 1px; border-bottom-style: solid; border-color: #e5e7eb; }
+        .border-t { border-top-width: 1px; border-top-style: solid; border-color: #e5e7eb; }
+        .border-gray-100 { border-color: #f3f4f6; }
+        .border-gray-200 { border-color: #e5e7eb; }
+        .border-transparent { border-color: transparent; }
+        .px-3 { padding-left: 0.75rem; padding-right: 0.75rem; }
+        .px-4 { padding-left: 1rem; padding-right: 1rem; }
+        .px-6 { padding-left: 1.5rem; padding-right: 1.5rem; }
+        .py-1\.5 { padding-top: 0.375rem; padding-bottom: 0.375rem; }
+        .py-2 { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+        .py-3\.5 { padding-top: 0.875rem; padding-bottom: 0.875rem; }
+        .py-4 { padding-top: 1rem; padding-bottom: 1rem; }
+        .p-2 { padding: 0.5rem; }
+        .p-4 { padding: 1rem; }
+        .p-6 { padding: 1.5rem; }
+        .gap-1\.5 { gap: 0.375rem; }
+        .gap-2 { gap: 0.5rem; }
+        .gap-3 { gap: 0.75rem; }
+        .space-y-6 > :not(:last-child) { margin-bottom: 1.5rem; }
+        .text-xs { font-size: 0.75rem; }
+        .text-sm { font-size: 0.875rem; }
+        .text-lg { font-size: 1.125rem; }
+        .font-bold { font-weight: 700; }
+        .font-semibold { font-weight: 600; }
+        .font-medium { font-weight: 500; }
+        .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+        .uppercase { text-transform: uppercase; }
+        .tracking-wider { letter-spacing: 0.05em; }
+        .shadow-sm { box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+        .shadow-xl { box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04); }
+        .overflow-hidden { overflow: hidden; }
+        .overflow-y-auto { overflow-y: auto; }
+        .overflow-hidden { overflow: hidden; }
+        .relative { position: relative; }
+        .absolute { position: absolute; }
+        .bottom-full { bottom: 100%; }
+        .right-0 { right: 0; }
+        .top-0 { top: 0; }
+        .z-10 { z-index: 10; }
+        .z-20 { z-index: 20; }
+        .sticky { position: sticky; }
+        .mx-auto { margin-left: auto; margin-right: auto; }
+        .mb-2 { margin-bottom: 0.5rem; }
+        .mt-2 { margin-top: 0.5rem; }
+        .w-64 { width: 16rem; }
+        .max-h-60 { max-height: 15rem; }
+        .w-5 { width: 1.25rem; }
+        .h-5 { height: 1.25rem; }
+        .right-2 { right: 0.5rem; }
+        .text-center { text-align: center; }
+        .cursor-pointer { cursor: pointer; }
+        .whitespace-nowrap { white-space: nowrap; }
+        .outline-none { outline: none; }
+        .border-none { border: none; }
+        .bg-transparent { background-color: transparent; }
+        .font-sans { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+        .placeholder-gray-400::placeholder { color: #9ca3af; }
+        .hidden { display: none; }
+        .transition-colors { transition-property: color, background-color, border-color, fill, stroke; transition-duration: 150ms; }
+        .transition-all { transition-property: all; transition-duration: 150ms; }
+        .duration-200 { transition-duration: 200ms; }
+        .hover\:bg-blue-50:hover { background-color: #eff6ff; }
+        .hover\:bg-gray-50:hover { background-color: #f9fafb; }
+        .hover\:bg-gray-100:hover { background-color: #f3f4f6; }
+        .hover\:bg-blue-600:hover { background-color: #2563eb; }
+        .hover\:bg-blue-700:hover { background-color: #1d4ed8; }
+        .hover\:border-blue-500:hover { border-color: #3b82f6; }
+        .hover\:text-blue-600:hover { color: #2563eb; }
+        .disabled\:opacity-50:disabled { opacity: 0.5; }
+        .disabled\:hover\:bg-blue-600:disabled:hover { background-color: #2563eb; }
+        .focus-within\:border-blue-500:focus-within { border-color: #3b82f6; }
+        .focus-within\:bg-white:focus-within { background-color: #ffffff; }
+        .focus-within\:ring-2:focus-within { box-shadow: 0 0 0 2px rgba(59,130,246,0.5); }
+        .focus-within\:ring-blue-100:focus-within { box-shadow: 0 0 0 2px rgba(219,234,254,0.9); }
+        .max-w-\[85\%\] { max-width: 85%; }
+        .sm\:max-w-\[75\%\] { max-width: 75%; }
+        #send { display: none; }
+        #newConversation { padding-top: 0.125rem; padding-bottom: 0.125rem; }
+        .date-bar { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1.5rem 0 1.5rem; }
+        .date-label { font-size: 0.75rem; color: #6b7280; }
+        .bubble-tabs { display: flex; align-items: center; gap: 0.5rem; }
+        .bubble-tab { padding: 0.25rem 0.75rem; border-radius: 9999px; border: 1px solid #e5e7eb; background-color: #ffffff; font-size: 0.75rem; color: #4b5563; cursor: pointer; }
+        .bubble-tab.active { background-color: #2563eb; color: #ffffff; border-color: #2563eb; }
+        .date-select { padding: 0.25rem 0.75rem; border-radius: 9999px; border: 1px solid #e5e7eb; font-size: 0.75rem; color: #374151; background-color: #ffffff; }
+
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .bubble { white-space: pre-wrap; word-break: break-word; }
+        
+        /* Summary Style */
+        .summary-text {
+            font-size: 0.75rem;
+            color: #9ca3af; /* text-gray-400 */
+            font-style: italic;
+            margin-top: 4px;
+            margin-left: 12px;
+        }
+
+        /* Subscript Style for User */
+        .subscript-text {
+            font-size: 0.75rem;
+            color: #9ca3af; /* text-gray-400 */
+            margin-top: 4px;
+            margin-right: 12px;
+            text-align: right;
+        }
+
+        /* Popover Animation */
+        .popover-content {
+            transform-origin: bottom right; /* Changed to bottom right since it aligns to right */
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            transform: scale(0.95);
+            opacity: 0;
+            pointer-events: none;
+        }
+        .popover-content.open {
+            transform: scale(1);
+            opacity: 1;
+            pointer-events: auto;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+</head>
+<body class="h-full bg-gray-50 text-gray-800 flex flex-col font-sans">
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between sticky top-0 z-10 shadow-sm">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold">K</div>
+            <h1 class="text-lg font-semibold text-gray-800">KPI 智能查询助手</h1>
+        </div>
+        <div class="flex items-center gap-3 text-sm">
+            <div class="hidden sm:flex items-center gap-2 bg-gray-100 rounded-full px-3 py-1.5 border border-gray-200">
+                <span class="text-gray-500 text-xs uppercase font-bold tracking-wider">Session ID</span>
+                <input id="conversationId" readonly class="bg-transparent border-none outline-none text-gray-700 w-32 font-mono text-xs" />
+            </div>
+            <button id="newConversation" class="px-8 py-1.5 bg-white border border-gray-200 text-gray-600 hover:text-blue-600 hover:bg-gray-50 rounded-full transition-colors duration-200 text-sm font-medium shadow-sm" aria-label="新会话">
+                新对话
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Chat Area -->
+    <main class="flex-1 overflow-hidden flex flex-col max-w-4xl mx-auto w-full relative">
+        <div id="messages" class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6"></div>
+
+        <!-- Popover Menu (Moved out of options area, will be appended dynamically) -->
+        <div id="popoverMenu" class="popover-content absolute bottom-full right-0 mb-2 w-64 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden z-20 hidden">
+            <div id="popoverList" class="max-h-60 overflow-y-auto py-1">
+                <!-- Checkboxes injected here -->
+            </div>
+            <div class="p-2 border-t border-gray-100 bg-gray-50">
+                <button id="popoverConfirm" class="w-full py-2 bg-white border border-gray-200 text-gray-800 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors shadow-sm">
+                    确认选择
+                </button>
+            </div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="p-4 sm:p-6 bg-white border-t border-gray-100">
+            <div class="relative flex items-center bg-gray-100 rounded-2xl border border-transparent focus-within:border-blue-500 focus-within:bg-white focus-within:ring-2 focus-within:ring-blue-100 transition-all duration-200 shadow-sm">
+                <input id="input" type="text" placeholder="输入自然语言查询，例如：产品A和B上个月的销售额对比" class="flex-1 bg-transparent border-none outline-none py-3.5 pl-4 pr-12 text-gray-700 placeholder-gray-400" />
+                <button id="send" class="absolute right-2 p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600 transition-colors duration-200 shadow-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+                    </svg>
+                </button>
+            </div>
+            <div class="text-center mt-2">
+                 <p class="text-xs text-gray-400">AI 生成内容可能不准确，请以实际数据为准</p>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const messagesEl = document.getElementById("messages");
+        const inputEl = document.getElementById("input");
+        const sendBtn = document.getElementById("send");
+        const conversationIdEl = document.getElementById("conversationId");
+        const newConversationBtn = document.getElementById("newConversation");
+        
+        // Popover Elements
+        const popoverMenu = document.getElementById("popoverMenu");
+        const popoverList = document.getElementById("popoverList");
+        const popoverConfirm = document.getElementById("popoverConfirm");
+        let selectedValues = new Set();
+
+        // Track current options container
+        let currentOptionsContainer = null;
+
+        function createConversationId() {
+            return "c-" + Date.now() + "-" + Math.floor(Math.random() * 10000);
+        }
+
+        function initConversationId(resetHistory) {
+            const id = createConversationId();
+            conversationIdEl.value = id;
+            if (resetHistory) {
+                messagesEl.innerHTML = "";
+                if (currentOptionsContainer) {
+                    currentOptionsContainer.remove();
+                    currentOptionsContainer = null;
+                }
+            }
+            addBotMessage("你好，我是 KPI 智能查询助手。\n请从下方按钮选择 KPI 大类，或直接输入你的问题。");
+            fetchChat({ conversationId: id, message: "", payload: null });
+        }
+
+        function scrollToBottom() {
+            const lastMessage = messagesEl.lastElementChild;
+            if (lastMessage) lastMessage.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+
+        function addMessage(role, text, summary = null, subscript = null, chartData = null) {
+            const div = document.createElement("div");
+            div.className = `flex w-full ${role === 'user' ? 'justify-end' : 'justify-start'}`;
+            const isBot = role === 'bot';
+            
+            // Added text-left to the bubble
+            let contentHtml = `
+                <div class="flex max-w-[85%] sm:max-w-[75%] gap-3 ${role === 'user' ? 'flex-row-reverse' : 'flex-row'}">
+                    <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${isBot ? 'bg-blue-100 text-blue-600' : 'bg-gray-200 text-gray-600'}">
+                        ${isBot ? 
+                            '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M2 10a8 8 0 018-8v8h8a8 8 0 11-16 0z" /><path d="M12 2.252A8.014 8.014 0 0117.748 8H12V2.252z" /></svg>' : 
+                            '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" /></svg>'
+                        }
+                    </div>
+                    <div class="flex flex-col gap-1 ${role === 'user' ? 'items-end' : 'items-start'}">
+                        <span class="text-xs text-gray-400 ml-1">${isBot ? 'KPI 助手' : '你'}</span>
+                        <div class="bubble px-4 py-2 rounded-full text-sm text-left ${isBot ? 'bg-gray-50 text-gray-800' : 'bg-blue-50 text-blue-600'}">${text}</div>
+                        ${summary ? `<div class="summary-text">${summary.replace(/\n/g, '<br>')}</div>` : ''}
+                        ${subscript ? `<div class="subscript-text">${subscript}</div>` : ''}
+                        ${chartData ? `<div class="chart-container w-full h-64 mt-2 bg-white rounded-lg p-2 border border-gray-100" style="min-width: 300px; min-height: 300px;"></div>` : ''}
+                    </div>
+                </div>
+            `;
+            div.innerHTML = contentHtml;
+            messagesEl.appendChild(div);
+            
+            if (chartData) {
+                // Ensure DOM is updated before init chart
+                requestAnimationFrame(() => {
+                    const chartContainer = div.querySelector('.chart-container');
+                    if (chartContainer) {
+                        const chart = echarts.init(chartContainer);
+                        chart.setOption(chartData);
+                        window.addEventListener('resize', () => chart.resize());
+                    }
+                });
+            }
+            
+            scrollToBottom();
+        }
+
+        function addUserMessage(text, subscript = null) {
+            if (!text) return;
+            // Clear options when user sends a message
+            if (currentOptionsContainer) {
+                currentOptionsContainer.remove();
+                currentOptionsContainer = null;
+            }
+            addMessage("user", text, null, subscript);
+        }
+
+        function addBotMessage(text, summary, chartData) {
+            addMessage("bot", text, summary, null, chartData);
+        }
+
+        // --- Popover Logic ---
+        function togglePopover(options, triggerBtn, isSingleSelect = false) {
+            const isOpen = popoverMenu.classList.contains("open");
+            // If opening a different trigger, close first then reopen
+            // Here assuming only one active popover logic
+            if (isOpen) {
+                // Check if it's the same trigger?
+                // For simplicity, just toggle
+                closePopover();
+                // If it was already open and we clicked the same button, we just closed it. Return.
+                // But wait, the triggerBtn click listener might have propagation issues if we don't track which button.
+                // Ideally we should track active trigger.
+                // But current logic is simple enough.
+                return;
+            }
+
+            selectedValues.clear();
+            popoverList.innerHTML = "";
+            
+            // Adjust confirm button visibility
+            const confirmArea = popoverMenu.querySelector('.border-t');
+            if (isSingleSelect) {
+                confirmArea.style.display = 'none';
+            } else {
+                confirmArea.style.display = 'block';
+            }
+
+            options.forEach(opt => {
+                const label = document.createElement("label");
+                label.className = "flex items-center justify-start gap-3 px-4 py-2 hover:bg-gray-50 cursor-pointer transition-colors";
+                
+                const span = document.createElement("span");
+                span.className = "text-sm text-gray-700";
+                span.textContent = opt.label;
+
+                if (isSingleSelect) {
+                    // Single Select: No checkbox, just click behavior
+                    label.addEventListener("click", () => {
+                        // Trigger selection immediately
+                        if (opt.payload && opt.payload.type === "time_value") {
+                            // Show user message
+                            // We don't have index here easily unless we pass it, but usually time selection is self-explanatory
+                            // Let's mimic what renderOptions buttons do
+                            fetchChat({ 
+                                conversationId: conversationIdEl.value, 
+                                message: "", 
+                                payload: opt.payload 
+                            }, opt.label); // Pass label as pending user text
+                        }
+                        closePopover();
+                    });
+                    label.appendChild(span);
+                } else {
+                    // Multi Select: Checkbox
+                    const checkbox = document.createElement("input");
+                    checkbox.type = "checkbox";
+                    checkbox.value = opt.payload.value;
+                    checkbox.className = "w-4 h-4 text-gray-800 rounded focus:ring-gray-500 border-gray-300";
+                    
+                    checkbox.addEventListener("change", (e) => {
+                        if (e.target.checked) selectedValues.add(e.target.value);
+                        else selectedValues.delete(e.target.value);
+                    });
+
+                    // Checkbox on left, text on right
+                    label.appendChild(checkbox);
+                    label.appendChild(span);
+                }
+                
+                popoverList.appendChild(label);
+            });
+
+            // Ensure popover is visible and in the correct container
+            popoverMenu.classList.remove("hidden");
+            popoverMenu.classList.add("open");
+            
+            // Close when clicking outside
+            // We need to handle the triggerBtn exclusion
+            // Store current trigger for the click outside handler
+            popoverMenu._currentTrigger = triggerBtn;
+            
+            document.addEventListener('click', closePopoverOnClickOutside);
+        }
+
+        function closePopover() {
+            popoverMenu.classList.remove("open");
+            popoverMenu.classList.add("hidden");
+            popoverMenu._currentTrigger = null;
+            document.removeEventListener('click', closePopoverOnClickOutside);
+        }
+
+        function closePopoverOnClickOutside(e) {
+            const trigger = popoverMenu._currentTrigger;
+            if (!popoverMenu.contains(e.target) && (!trigger || !trigger.contains(e.target))) {
+                closePopover();
+            }
+        }
+
+        popoverConfirm.addEventListener("click", () => {
+            const values = Array.from(selectedValues);
+            if (values.length === 0) return;
+            
+            // Show user message for multi-select
+            addUserMessage(`选择了 ${values.length} 项: ${values.join(", ")}`);
+
+            fetchChat({
+                conversationId: conversationIdEl.value,
+                message: "",
+                payload: { type: "confirm_filter_values", values: values }
+            });
+            closePopover();
+        });
+
+        // --- Option Rendering ---
+        function renderOptions(options) {
+            // Remove existing options container if any
+            if (currentOptionsContainer) {
+                currentOptionsContainer.remove();
+                currentOptionsContainer = null;
+            }
+            
+            closePopover(); 
+            
+            if (!options || !options.length) return;
+
+            // Create new container in the message stream
+            const container = document.createElement("div");
+            container.className = "flex flex-wrap gap-2 justify-end px-4 sm:px-6 py-2 relative w-full";
+            currentOptionsContainer = container;
+            messagesEl.appendChild(container);
+            
+            // Move popoverMenu into this container so it's positioned relative to it
+            // We need to make sure popoverMenu is not deleted when we clear optionsEl (which is gone now)
+            // It is safe because we moved it out of optionsEl in HTML.
+            // Now we append it to the current container for correct positioning if needed
+            // But popoverMenu is unique. If we append it here, it will be removed when container is removed.
+            // That's fine, but we need to make sure we don't lose the element reference or event listeners.
+            // Actually, if we remove the container, the popoverMenu element is removed from DOM.
+            // We should probably clone it or move it back to body before removing container?
+            // OR simpler: Just append it here. When container is removed, popoverMenu is removed from DOM.
+            // But the variable `popoverMenu` still holds the reference.
+            // If we re-append it next time, it will be back in DOM.
+            // Yes, `appendChild` moves it.
+            container.appendChild(popoverMenu);
+
+            const isFilterValueList = options.length > 0 && options.every(opt => opt.payload && opt.payload.type === "filter_value");
+            const isTimeValueList = options.length > 0 && options.every(opt => opt.payload && opt.payload.type === "time_value");
+
+            if (isFilterValueList) {
+                const btn = document.createElement("button");
+                btn.id = "multiSelectTrigger";
+                btn.className = "px-4 py-2 bg-gray-100 text-gray-800 rounded-full text-sm font-medium hover:bg-gray-200 transition-colors shadow-sm flex items-center gap-2";
+                btn.innerHTML = `
+                    <span>Product</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 transition-transform duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
+                    </svg>
+                `;
+                btn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    togglePopover(options, btn, false);
+                });
+                container.appendChild(btn);
+                
+                // Automatically open the popover for smoother UX
+                setTimeout(() => togglePopover(options, btn, false), 10);
+                
+                scrollToBottom();
+                return;
+            }
+
+            if (isTimeValueList) {
+                const btn = document.createElement("button");
+                btn.className = "px-4 py-2 bg-gray-100 text-gray-800 rounded-full text-sm font-medium hover:bg-gray-200 transition-colors shadow-sm flex items-center gap-2";
+                btn.innerHTML = `
+                    <span>选择时间</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 transition-transform duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
+                    </svg>
+                `;
+                btn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    togglePopover(options, btn, true); // true = single select
+                });
+                container.appendChild(btn);
+                
+                // Automatically open the popover
+                setTimeout(() => togglePopover(options, btn, true), 10);
+                
+                scrollToBottom();
+                return;
+            }
+
+            options.forEach((opt, index) => {
+                const btn = document.createElement("button");
+                btn.className = "px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-full text-sm hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200 shadow-sm whitespace-nowrap";
+                btn.textContent = opt.label;
+                btn.addEventListener("click", (e) => {
+                    if (opt.payload && opt.payload.type === "dropdown_select") {
+                        e.stopPropagation();
+                        togglePopover(opt.payload.values, btn, true);
+                        return;
+                    }
+
+                    if (opt.payload && opt.payload.type === "download_detail") {
+                        const id = conversationIdEl.value;
+                        window.location = "/api/detail/download?conversationId=" + encodeURIComponent(id);
+                        return;
+                    }
+                    
+                    const isFilterValue = opt.payload && opt.payload.type === "filter_value";
+
+                    if (isFilterValue) {
+                        // Leaf node selection: Show message immediately with subscript
+                        addUserMessage(opt.label, `${index + 1}`);
+                        fetchChat({ conversationId: conversationIdEl.value, message: "", payload: opt.payload });
+                    } else {
+                        // Intermediate node: Silent request, let fetchChat decide
+                        fetchChat({ conversationId: conversationIdEl.value, message: "", payload: opt.payload }, opt.label);
+                    }
+                });
+                container.appendChild(btn);
+            });
+            
+            scrollToBottom();
+        }
+
+        async function fetchChat(body, pendingUserText = null) {
+            sendBtn.disabled = true;
+            try {
+                const res = await fetch("/api/chat", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(body),
+                });
+                const data = await res.json();
+
+                // Check if we should stay silent
+                // Condition: We have a pending user text AND the response provides a list of filter values (selection mode)
+                const nextOptions = data.options || [];
+                const isNextStepSelection = nextOptions.length > 0 && nextOptions.every(o => o.payload && o.payload.type === "filter_value");
+
+                if (pendingUserText && isNextStepSelection) {
+                    // SILENT MODE: Do not show pending user message, do not show bot reply
+                    // Just render options (which happens below)
+                } else {
+                    // NORMAL MODE
+                    if (pendingUserText) {
+                        addUserMessage(pendingUserText); // Flush pending message if it wasn't a selection step
+                    }
+                    if (data.reply) {
+                        addBotMessage(data.reply, data.summary, data.chartData);
+                    }
+                }
+
+                renderOptions(data.options);
+            } catch (e) {
+                addBotMessage("请求失败，请稍后再试。");
+            } finally {
+                sendBtn.disabled = false;
+                if (!isMobile()) inputEl.focus();
+            }
+        }
+
+        function isMobile() { return window.innerWidth <= 768; }
+
+        sendBtn.addEventListener("click", () => {
+            const text = inputEl.value.trim();
+            if (!text) return;
+            addUserMessage(text);
+            fetchChat({ conversationId: conversationIdEl.value, message: text, payload: null });
+            inputEl.value = "";
+        });
+
+        inputEl.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                sendBtn.click();
+            }
+        });
+
+        newConversationBtn.addEventListener("click", () => initConversationId(true));
+        initConversationId(false);
+    </script>
+</body>
+</html>
