@@ -63,7 +63,7 @@ async function getTimeOptions() {
   for (const [year, monthNums] of yearMap.entries()) {
     fyOptions.push({
       value: year,
-      label: year + " 财年",
+      label: "FY" + year.slice(2),
     });
     const hasH1 = monthNums.some((v) => v >= 1 && v <= 6);
     const hasH2 = monthNums.some((v) => v >= 7 && v <= 12);
@@ -142,6 +142,8 @@ async function buildOptionsForStage(state) {
     if (metric && metric.allowedTimeTypes) {
         allowedTypes = metric.allowedTimeTypes;
     }
+
+    const timeOpts = await getTimeOptions();
     
     const options = [];
     if (allowedTypes.includes("month")) {
@@ -157,9 +159,18 @@ async function buildOptionsForStage(state) {
         });
     }
     if (allowedTypes.includes("fy")) {
+        const fyValues = timeOpts.fy.map(opt => ({
+            label: opt.label,
+            payload: { 
+                type: "time_value", 
+                value: opt.value, 
+                label: opt.label,
+                timeType: "fy"
+            }
+        }));
         options.push({
             label: "FY",
-            payload: { type: "time_type", value: "fy" },
+            payload: { type: "dropdown_select", values: fyValues },
         });
     }
     return options;
@@ -1019,7 +1030,7 @@ app.get("/api/time-options", async (req, res) => {
     for (const [year, monthNums] of yearMap.entries()) {
       fyOptions.push({
         value: year,
-        label: year + " 财年",
+        label: "FY" + year.slice(2),
       });
       const hasH1 = monthNums.some((v) => v >= 1 && v <= 6);
       const hasH2 = monthNums.some((v) => v >= 7 && v <= 12);

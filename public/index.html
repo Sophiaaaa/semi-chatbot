@@ -2,7 +2,7 @@
 <html lang="zh-CN" class="h-full">
 <head>
     <meta charset="utf-8" />
-    <title>KPI 智能查询助手</title>
+    <title>聊天机器人demo</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
         * { box-sizing: border-box; }
@@ -172,8 +172,8 @@
     <!-- Header -->
     <header class="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between sticky top-0 z-10 shadow-sm">
         <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold">K</div>
-            <h1 class="text-lg font-semibold text-gray-800">KPI 智能查询助手</h1>
+            <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold"></div>
+            <h1 class="text-lg font-semibold text-gray-800">聊天机器人demo</h1>
         </div>
         <div class="flex items-center gap-3 text-sm">
             <div class="hidden sm:flex items-center gap-2 bg-gray-100 rounded-full px-3 py-1.5 border border-gray-200">
@@ -463,7 +463,7 @@
             if (isFilterValueList) {
                 const btn = document.createElement("button");
                 btn.id = "multiSelectTrigger";
-                btn.className = "px-4 py-2 bg-gray-100 text-gray-800 rounded-full text-sm font-medium hover:bg-gray-200 transition-colors shadow-sm flex items-center gap-2";
+                btn.className = "px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-full text-sm font-medium hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200 shadow-sm flex items-center gap-2";
                 btn.innerHTML = `
                     <span>Product</span>
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 transition-transform duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -485,7 +485,7 @@
 
             if (isTimeValueList) {
                 const btn = document.createElement("button");
-                btn.className = "px-4 py-2 bg-gray-100 text-gray-800 rounded-full text-sm font-medium hover:bg-gray-200 transition-colors shadow-sm flex items-center gap-2";
+                btn.className = "px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-full text-sm font-medium hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200 shadow-sm flex items-center gap-2";
                 btn.innerHTML = `
                     <span>选择时间</span>
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 transition-transform duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -507,8 +507,20 @@
 
             options.forEach((opt, index) => {
                 const btn = document.createElement("button");
-                btn.className = "px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-full text-sm hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200 shadow-sm whitespace-nowrap";
-                btn.textContent = opt.label;
+                
+                if (opt.payload && opt.payload.type === "dropdown_select") {
+                    btn.className = "px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-full text-sm font-medium hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200 shadow-sm flex items-center gap-2";
+                    btn.innerHTML = `
+                        <span>${opt.label}</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 transition-transform duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
+                        </svg>
+                    `;
+                } else {
+                    btn.className = "px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-full text-sm hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200 shadow-sm whitespace-nowrap";
+                    btn.textContent = opt.label;
+                }
+
                 btn.addEventListener("click", (e) => {
                     if (opt.payload && opt.payload.type === "dropdown_select") {
                         e.stopPropagation();
