@@ -6,17 +6,19 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "echo \"No automated tests configured\""
+    "test": "node --test"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
     "echarts": "^6.0.0",
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "mysql2": "^3.16.1",
+    "node-fetch": "^3.3.2",
     "sqlite3": "^5.1.7"
   }
 }

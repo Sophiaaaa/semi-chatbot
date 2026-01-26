@@ -8,6 +8,7 @@ node_modules/
 kpi_chatbot.db
 *.sqlite
 *.sqlite3
+*.db
 
 # Logs
 npm-debug.log*
@@ -22,3 +23,12 @@ logs/
 # Editor
 .vscode/
 .idea/
+
+# Local demo artifacts
+cookies.txt
+demo.db
+sql_agent_demo/
+version2/
+__pycache__/
+*.pyc
+test_db*.js

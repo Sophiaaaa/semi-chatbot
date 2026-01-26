@@ -1,7 +1,10 @@
+console.log("SERVER STARTING...");
 const express = require("express");
 const cors = require("cors");
 const ExcelJS = require("exceljs");
+const path = require("path");
 const metricsConfig = require("./config/metrics");
+const nlu = require("./lib/nlu");
 const db = require("./db");
 
 const app = express();
@@ -9,6 +12,9 @@ const port = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
+app.get("/vendor/echarts.min.js", (req, res) => {
+  res.sendFile(path.join(__dirname, "node_modules", "echarts", "dist", "echarts.min.js"));
+});
 app.use(express.static("public"));
 
 const Stage = {
@@ -35,11 +41,11 @@ const conversations = new Map();
 
 async function getTimeOptions() {
   const rows = await db.query(
-    "SELECT DISTINCT update_month FROM personnel_detail ORDER BY update_month",
+    "SELECT DISTINCT st_WrMonth FROM dws_tas_roster ORDER BY st_WrMonth",
     []
   );
   const monthsRaw = rows
-    .map((r) => (r.update_month == null ? null : String(r.update_month)))
+    .map((r) => (r.st_WrMonth == null ? null : String(r.st_WrMonth)))
     .filter((v) => v);
   monthsRaw.sort();
   const monthOptions = monthsRaw.map((m) => ({
@@ -63,7 +69,7 @@ async function getTimeOptions() {
   for (const [year, monthNums] of yearMap.entries()) {
     fyOptions.push({
       value: year,
-      label: "FY" + year.slice(2),
+      label: year + " 财年",
     });
     const hasH1 = monthNums.some((v) => v >= 1 && v <= 6);
     const hasH2 = monthNums.some((v) => v >= 7 && v <= 12);
@@ -142,8 +148,6 @@ async function buildOptionsForStage(state) {
     if (metric && metric.allowedTimeTypes) {
         allowedTypes = metric.allowedTimeTypes;
     }
-
-    const timeOpts = await getTimeOptions();
     
     const options = [];
     if (allowedTypes.includes("month")) {
@@ -159,18 +163,9 @@ async function buildOptionsForStage(state) {
         });
     }
     if (allowedTypes.includes("fy")) {
-        const fyValues = timeOpts.fy.map(opt => ({
-            label: opt.label,
-            payload: { 
-                type: "time_value", 
-                value: opt.value, 
-                label: opt.label,
-                timeType: "fy"
-            }
-        }));
         options.push({
             label: "FY",
-            payload: { type: "dropdown_select", values: fyValues },
+            payload: { type: "time_type", value: "fy" },
         });
     }
     return options;
@@ -272,13 +267,32 @@ function getSummary(state) {
   return summarizeState(state);
 }
 
+function stripWhereStubForDisplay(sql) {
+  return String(sql || "")
+    .replace(/\bWHERE\s+1=1\s+AND\s+/i, "WHERE ")
+    .replace(/\bWHERE\s+1=1\b\s*/i, "");
+}
+
+function formatSqlForDisplay(sql, params) {
+  let formatted = String(sql || "");
+  for (const val of Array.isArray(params) ? params : []) {
+    const v = typeof val === "string" ? `'${val}'` : val;
+    formatted = formatted.replace("?", v);
+  }
+  return stripWhereStubForDisplay(formatted);
+}
+
 function buildWhere(state) {
   const params = [];
   let where = "WHERE 1=1";
+  
+  const category = kpiCategories.find((c) => c.id === state.kpiCategoryId);
+  const metric = category && category.metrics.find((m) => m.id === state.kpiMetricId);
+
   if (state.timeRange && state.timeRange.type !== 'none' && state.timeRange.value) {
     const tr = state.timeRange;
     if (tr.type === "month" && tr.value) {
-      where += " AND update_month = ?";
+      where += " AND st_WrMonth = ?";
       params.push(tr.value);
     } else if (tr.type === "half_fy" && tr.value) {
       const v = String(tr.value);
@@ -294,16 +308,16 @@ function buildWhere(state) {
         maxMonth = 12;
       }
       where +=
-        " AND substr(update_month, 1, 4) = ? AND CAST(substr(update_month, 5, 2) AS INTEGER) BETWEEN ? AND ?";
+        " AND substr(st_WrMonth, 1, 4) = ? AND CAST(substr(st_WrMonth, 5, 2) AS INTEGER) BETWEEN ? AND ?";
       params.push(year, minMonth, maxMonth);
     } else if (tr.type === "fy" && tr.value) {
       const v = String(tr.value);
       const year = v.slice(0, 4);
-      where += " AND substr(update_month, 1, 4) = ?";
+      where += " AND substr(st_WrMonth, 1, 4) = ?";
       params.push(year);
     } else if (tr.value && tr.value !== "any") {
       // Only filter if value is provided and not 'any'
-      where += " AND update_month = ?";
+      where += " AND st_WrMonth = ?";
       params.push(tr.value);
     }
   }
@@ -316,8 +330,14 @@ function buildWhere(state) {
       (d) => d.id === state.filterDimension
     );
     if (dim) {
+      let column = dim.column;
+      // Check for dimension override in metric config
+      if (metric && metric.dimensionMap && metric.dimensionMap[dim.id]) {
+          column = metric.dimensionMap[dim.id];
+      }
+      
       const placeholders = state.filterValues.map(() => "?").join(",");
-      where += " AND " + dim.column + " IN (" + placeholders + ")";
+      where += " AND " + column + " IN (" + placeholders + ")";
       for (let i = 0; i < state.filterValues.length; i += 1) {
         params.push(state.filterValues[i]);
       }
@@ -409,16 +429,6 @@ async function handleButtonInput(state, payload, textInput) {
     if (!state.filterValues.includes(payload.value)) {
       state.filterValues.push(payload.value);
     }
-    // For simplicity, if multi-select, we usually wait for confirm.
-    // But here to support 'one click done' if it were single select or just to show summary...
-    // The previous logic was to go to SUMMARY_CONFIRM.
-    // The requirement says: "If filter conditions are completed... directly run and give results".
-    // For multi-select (which filter values usually are), we still need a "confirm" action from UI.
-    // But once that confirm comes (payload type confirm_filter_values), we should execute.
-    // Wait, the "popoverConfirm" button in UI sends 'confirm_filter_values'.
-    // So the block above handles it.
-    
-    // However, if we are in a flow where filter is NONE?
     state.stage = Stage.SUMMARY_CONFIRM;
     return {
       reply: summarizeState(state),
@@ -444,8 +454,6 @@ async function handleButtonInput(state, payload, textInput) {
   if (state.stage === Stage.SHOW_RESULT) {
     if (payload.type === "new_query") {
       const newState = createEmptyState();
-      // Keep conversationId, but reset state
-      // Actually we just need to reset fields.
       state.stage = Stage.KPI_CATEGORY_SELECT;
       state.kpiCategoryId = null;
       state.kpiMetricId = null;
@@ -465,7 +473,6 @@ async function handleButtonInput(state, payload, textInput) {
       const category = kpiCategories.find((c) => c.id === state.kpiCategoryId);
       const metric = category && category.metrics.find((m) => m.id === state.kpiMetricId);
       
-      // Check if we already have aggregated group data
       if (metric && metric.kind === "aggregate_group" && state.lastQueryResult) {
           const rows = state.lastQueryResult;
           const groupBy = metric.groupBy || "item";
@@ -487,18 +494,29 @@ async function handleButtonInput(state, payload, textInput) {
         };
       }
       
-      // If current metric is NOT aggregate_group (e.g. simple count), but user wants a chart.
-      // We should try to generate a chart by product if possible?
-      // Requirement: "If generating chart, need select product, count(1) from ... group by product"
-      // This implies we should run a new query to get chart data if current data is not suitable.
-      // Let's assume we fallback to "Group by Product" chart if current is simple aggregate.
       if (metric && metric.kind === "aggregate") {
           const { where, params } = buildWhere(state);
-          const sql = "SELECT product, COUNT(*) AS value FROM personnel_detail " + where + " GROUP BY product";
+          
+          // Determine the product column
+          let productCol = "st_DeptName"; // Default for personnel
+          // Find 'product' dimension config
+          const productDim = metricsConfig.filterDimensions.find(d => d.id === 'product');
+          if (productDim) {
+             productCol = productDim.column;
+          }
+          // Check for override
+          if (metric.dimensionMap && metric.dimensionMap.product) {
+              productCol = metric.dimensionMap.product;
+          }
+
+          let sql = metric.sql;
+          sql = sql.replace(/SELECT\s+COUNT\(\*\)\s+AS\s+value/i, `SELECT ${productCol} as product, COUNT(*) AS value`);
+          sql = sql.replace("{where}", where);
+          sql += ` GROUP BY ${productCol}`;
+
           const rows = await db.query(sql, params);
           
           let finalRows = rows;
-          // If we have product filters, ensure all selected products are in the result
           if (state.filterDimension === FilterDimension.PRODUCT && state.filterValues.length > 0) {
               const existingMap = new Map(rows.map(r => [r.product, r.value]));
               finalRows = state.filterValues.map(val => ({
@@ -507,7 +525,7 @@ async function handleButtonInput(state, payload, textInput) {
               }));
           }
           
-          if (finalRows.length > 0) {
+          if (finalRows.length > 0 || state.filterValues.length > 0) { 
               const chartData = {
                 tooltip: { trigger: 'axis' },
                 xAxis: { type: 'category', data: finalRows.map(r => r.product || "未知") },
@@ -519,23 +537,12 @@ async function handleButtonInput(state, payload, textInput) {
                 }],
                 grid: { top: 30, bottom: 30, left: 40, right: 20 }
             };
-            
-            // Format SQL for display
-            const formatSql = (s, p) => {
-                let formatted = s;
-                for (const val of p) {
-                  const v = typeof val === 'string' ? `'${val}'` : val;
-                  formatted = formatted.replace('?', v);
-                }
-                return formatted;
-            };
-            
-            // Update last query sql to show the chart query
-             state.lastQuerySql = formatSql(sql, params);
+             state.lastQuerySql = formatSqlForDisplay(sql, params);
 
              return {
                 reply: withSummary("已按产品为您生成图表：", state),
-                summary: getSummary(state), // Make sure summary is updated with new SQL
+                summary: getSummary(state), 
+                summary: getSummary(state), 
                 chartData: chartData
             };
           }
@@ -572,9 +579,6 @@ async function extractEntitiesFromText(text) {
   let finalFilterDim = filtersFromText ? filtersFromText.filterDimension : null;
   let finalFilterVals = filtersFromText ? filtersFromText.filterValues : [];
 
-  // If we missed KPI (or potentially other parts), try LLM to see if it can extract more context.
-  // We do this if KPI is missing OR if we want to be more robust.
-  // Given the requirement "ct有多少工程师" -> missed KPI via regex, we should try LLM.
   if (!finalKpi) {
       const llmIntent = await parseIntentWithLlm(trimmed).catch(() => null);
       if (llmIntent) {
@@ -585,11 +589,9 @@ async function extractEntitiesFromText(text) {
                   kpiDetailId: llmIntent.kpiDetailId
               };
           }
-          // Merge Time if missing
           if (!finalTime && llmIntent.timeRange) {
                finalTime = llmIntent.timeRange;
           }
-          // Merge Filter if missing
           if (!finalFilterDim && llmIntent.filterDimension) {
                finalFilterDim = llmIntent.filterDimension;
                finalFilterVals = llmIntent.filterValues;
@@ -597,7 +599,6 @@ async function extractEntitiesFromText(text) {
       }
   }
 
-  // If still nothing found at all, return null
   if (!finalKpi && !finalTime && !finalFilterDim) {
       return null;
   }
@@ -613,44 +614,10 @@ async function extractEntitiesFromText(text) {
 }
 
 function extractKpiFromText(text) {
-  // Iterate through all configured metrics to find a match based on keywords
   for (const category of kpiCategories) {
     for (const metric of category.metrics) {
       if (metric.keywords && metric.keywords.length > 0) {
-        // Simple AND logic for keywords? Or OR logic?
-        // Let's assume if ANY keyword matches, it's a candidate.
-        // But for "工程师数量", keywords are ["工程师", "人数", "多少人"]
-        // If text is "ct有多少工程师", it matches "工程师".
-        // If text is "ct有多少机台", it matches "机台".
-        
-        // However, "按产品统计" needs stricter matching?
-        // The original logic was: includes("工程师") AND includes("数量")
-        
-        // Let's try: if ALL words in a keyword phrase are present?
-        // No, let's treat keywords as list of alternatives.
-        // But "工程师" is too broad if we have multiple metrics sharing it.
-        // "工程师数量" vs "工程师明细".
-        // "工程师明细" keywords: ["工程师名单", "人员明细"]
-        // "工程师数量" keywords: ["工程师", "人数", "多少人"]
-        
-        // Wait, "工程师" alone is ambiguous.
-        // The user's original request was "ct有多少工程师" -> "engineer_count".
-        // My config for engineer_count has "工程师".
-        
-        // Let's implement a scoring system or specific check.
-        // Or better, let's trust the keywords provided in config are sufficient.
-        // For "engineer_count", maybe I should change keywords to ["工程师+数量", "工程师+多少", "人数"]?
-        // Let's stick to simple "includes" for now, but iterate in order.
-        // And maybe prioritize longer matches or specific ones.
-        
-        // Actually, the previous hardcoded logic was:
-        // (工程师 AND (数量 OR 多少)) OR 人数
-        
-        // Let's update config to reflect this complexity?
-        // Or just implement a robust matcher here.
-        
         for (const keyword of metric.keywords) {
-            // Support "A+B" syntax for AND logic in keywords
             const parts = keyword.split("+");
             const allPartsMatch = parts.every(part => text.includes(part));
             if (allPartsMatch) {
@@ -686,18 +653,14 @@ function updateStageAndGetReply(state) {
     state.stage = Stage.TIME_TYPE_SELECT;
     return withSummary("已识别指标，请继续选择时间类型：", state);
   } else if (!state.timeRange && !hasTimeConfig) {
-      // Auto-skip time if not configured
       state.timeRange = { type: 'none', label: '不限', value: null };
   }
 
-  // If filter is NONE (default) and we are not explicitly skipping it (need logic for that?), we ask.
-  // Assuming default NONE means "Not Selected Yet".
   if (!state.filterDimension || state.filterDimension === FilterDimension.NONE) {
     state.stage = Stage.FILTER_DIMENSION_SELECT;
     return withSummary("已识别指标和时间，请选择筛选维度：", state);
   }
   
-  // If filter dimension is selected (not NONE), but no values are selected yet, ask for values.
   if (state.filterDimension !== FilterDimension.NONE && state.filterValues.length === 0) {
       state.stage = Stage.FILTER_VALUE_SELECT;
       return withSummary("请选择具体值：", state);
@@ -723,23 +686,18 @@ function extractMonthFromText(text) {
 }
 
 function extractFiltersFromText(text) {
-  const products = [];
-  if (text.includes("ct")) products.push("ct");
-  if (text.includes("sps")) products.push("sps");
-  if (text.includes("es")) products.push("es");
-  const orgs = [];
-  if (text.includes("psm")) orgs.push("psm");
-  if (text.includes("非psm")) orgs.push("非psm");
-  if (products.length > 0) {
+  const extracted = nlu.extractFiltersFromText(metricsConfig, text);
+  if (!extracted) return null;
+  if (extracted.filterDimension === "product") {
     return {
       filterDimension: FilterDimension.PRODUCT,
-      filterValues: products,
+      filterValues: extracted.filterValues,
     };
   }
-  if (orgs.length > 0) {
+  if (extracted.filterDimension === "org") {
     return {
       filterDimension: FilterDimension.ORG,
-      filterValues: orgs,
+      filterValues: extracted.filterValues,
     };
   }
   return null;
@@ -750,7 +708,6 @@ async function parseIntentWithLlm(text) {
     return null;
   }
   
-  // Build dynamic metric descriptions
   const metricDescriptions = kpiCategories
       .flatMap(c => c.metrics)
       .map(m => `- ${m.id}: ${m.description || m.label}`)
@@ -767,7 +724,7 @@ async function parseIntentWithLlm(text) {
           "kpiMetric (从下方指标列表中选择一个id), " +
           "month (如 '202510' 表示 2025年10月), " +
           "filterDimension ('product' 或 'org' 或 null), " +
-          "filterValues (字符串数组，如 ['ct'] 或 ['psm'])。\n\n" +
+          "filterValues (字符串数组，如 ['CT'] 或 ['PSM'])。\n\n" +
           "可选指标列表：\n" + metricDescriptions + "\n\n" +
           "用户可能会说类似“看下10月ct的工程师数量”这样的中文自然语言，请你解析出对应的字段。" +
           "注意：请根据用户的描述匹配最合适的指标ID。",
@@ -815,7 +772,6 @@ async function parseIntentWithLlm(text) {
     return null;
   }
   
-  // Dynamic mapping check (ensure returned ID is valid)
   const kpiMetric = parsed.kpiMetric;
   let metricId = null;
   const allMetrics = kpiCategories.flatMap(c => c.metrics);
@@ -823,12 +779,6 @@ async function parseIntentWithLlm(text) {
   if (matchedMetric) {
       metricId = matchedMetric.id;
   } else {
-      // Fallback logic if LLM returns something weird, or stick to default logic?
-      // For now, if invalid, we might fallback to engineer_count if vague?
-      // Or just return null for metricId.
-      // Let's keep previous hardcoded fallbacks as safety net OR just trust LLM if valid.
-      // The previous code had hardcoded mapping.
-      // "engineer_count" was default fallback if match failed in specific ways.
       if (kpiMetric === "engineer_count" || !kpiMetric) metricId = "engineer_count";
   }
 
@@ -839,9 +789,13 @@ async function parseIntentWithLlm(text) {
   } else if (parsed.filterDimension === "org") {
     filterDimension = FilterDimension.ORG;
   }
-  const filterValues = Array.isArray(parsed.filterValues)
-    ? parsed.filterValues
-    : [];
+  const rawFilterValues = Array.isArray(parsed.filterValues) ? parsed.filterValues : [];
+  const filterValues =
+    filterDimension === FilterDimension.PRODUCT
+      ? nlu.canonicalizeFilterValues(metricsConfig, "product", rawFilterValues)
+      : filterDimension === FilterDimension.ORG
+        ? nlu.canonicalizeFilterValues(metricsConfig, "org", rawFilterValues)
+        : [];
   return {
     kpiCategoryId: "personnel",
     kpiMetricId: metricId,
@@ -894,22 +848,11 @@ async function runQueryForState(state) {
   }
   const { where, params } = buildWhere(state);
 
-  // Format SQL for display (replace placeholders with actual values for display)
-  const formatSql = (sql, p) => {
-    let formatted = sql;
-    for (const val of p) {
-      const v = typeof val === 'string' ? `'${val}'` : val;
-      formatted = formatted.replace('?', v);
-    }
-    return formatted;
-  };
-
   let sql = metric.sql;
   if (!sql) {
       return { reply: "该指标未配置SQL", raw: null, sql: null };
   }
   
-  // Replace {where} placeholder
   sql = sql.replace("{where}", where);
 
   if (metric.kind === "aggregate") {
@@ -918,7 +861,7 @@ async function runQueryForState(state) {
     return {
       reply: "查询结果：" + metric.label + "为 " + value + " 。",
       raw: rows,
-      sql: formatSql(sql, params)
+      sql: formatSqlForDisplay(sql, params)
     };
   }
   
@@ -941,13 +884,12 @@ async function runQueryForState(state) {
       return {
         reply: "未查询到符合条件的数据。",
         raw: finalRows,
-        sql: formatSql(sql, params)
+        sql: formatSqlForDisplay(sql, params)
       };
     }
     
     const lines = finalRows.map((r) => (r[groupBy] || "未知") + "：" + r.value + " 人");
     
-    // Prepare chart data
     const chartData = {
         tooltip: { trigger: 'axis' },
         xAxis: { type: 'category', data: finalRows.map(r => r[groupBy] || "未知") },
@@ -963,23 +905,21 @@ async function runQueryForState(state) {
     return {
       reply: metric.label + "如下：\n" + lines.join("\n"),
       raw: finalRows,
-      sql: formatSql(sql, params),
+      sql: formatSqlForDisplay(sql, params),
       chartData: chartData
     };
   }
   
   if (metric.kind === "detail") {
-    // For display, limit to 50
     const displaySql = sql + " LIMIT 50";
     const rows = await db.query(displaySql, params);
     if (!rows.length) {
       return {
         reply: "未查询到符合条件的明细。",
         raw: rows,
-        sql: formatSql(displaySql, params)
+        sql: formatSqlForDisplay(displaySql, params)
       };
     }
-    // Dynamic columns display
     const lines = rows.map(r => {
         return Object.values(r).join(" ");
     });
@@ -988,7 +928,7 @@ async function runQueryForState(state) {
       reply:
         "查询到以下明细（最多显示 50 条）：\n" + lines.join("\n"),
       raw: rows,
-      sql: formatSql(displaySql, params)
+      sql: formatSqlForDisplay(displaySql, params)
     };
   }
   
@@ -1002,11 +942,11 @@ async function runQueryForState(state) {
 app.get("/api/time-options", async (req, res) => {
   try {
     const rows = await db.query(
-      "SELECT DISTINCT update_month FROM personnel_detail ORDER BY update_month",
+      "SELECT DISTINCT st_WrMonth FROM dws_tas_roster ORDER BY st_WrMonth",
       []
     );
     const monthsRaw = rows
-      .map((r) => (r.update_month == null ? null : String(r.update_month)))
+      .map((r) => (r.st_WrMonth == null ? null : String(r.st_WrMonth)))
       .filter((v) => v);
     monthsRaw.sort();
     const monthOptions = monthsRaw.map((m) => ({
@@ -1030,7 +970,7 @@ app.get("/api/time-options", async (req, res) => {
     for (const [year, monthNums] of yearMap.entries()) {
       fyOptions.push({
         value: year,
-        label: "FY" + year.slice(2),
+        label: year + " 财年",
       });
       const hasH1 = monthNums.some((v) => v >= 1 && v <= 6);
       const hasH2 = monthNums.some((v) => v >= 7 && v <= 12);
@@ -1063,14 +1003,21 @@ app.get("/api/time-options", async (req, res) => {
 
 app.post("/api/chat", async (req, res) => {
   const { conversationId, message, payload, timeRange } = req.body || {};
+  console.log(`[Request] ID=${conversationId}, Msg=${message}, Payload=${JSON.stringify(payload)}`);
+  
   if (!conversationId) {
     res.status(400).json({ error: "conversationId 必填" });
     return;
   }
   let state = conversations.get(conversationId);
+  console.log(`[StateCheck] ID=${conversationId}, Found=${!!state}, MapSize=${conversations.size}`);
+  
   if (!state) {
     state = createEmptyState();
     conversations.set(conversationId, state);
+    console.log(`[StateCreate] Created new state for ${conversationId}`);
+  } else {
+    console.log(`[StateBefore] Stage=${state.stage}`);
   }
 
   let overrideTimeRange = null;
@@ -1093,9 +1040,7 @@ app.post("/api/chat", async (req, res) => {
   if (typeof message === "string" && message.trim()) {
     const entities = await extractEntitiesFromText(message);
     
-    // If we found ANY entity (via regex or LLM), we merge and proceed.
     if (entities) {
-        // Merge Logic
         if (entities.kpiMetricId) {
              state.kpiCategoryId = entities.kpiCategoryId;
              state.kpiMetricId = entities.kpiMetricId;
@@ -1113,7 +1058,6 @@ app.post("/api/chat", async (req, res) => {
              state.filterValues = entities.filterValues;
         }
         
-        // After merge, check stage
         const replyText = updateStageAndGetReply(state);
         
         res.json({
@@ -1126,17 +1070,19 @@ app.post("/api/chat", async (req, res) => {
         return;
     }
     
-    // If entities is null (meaning NO regex match AND NO LLM match)
-    // AND we are at the start, then it is out of scope.
     if (state.stage === Stage.KPI_CATEGORY_SELECT) {
-      res.json({
-        reply: "很抱歉，您咨询的问题已经超纲了。\n目前仅支持查询人员信息、工程师数量等指标。",
-        summary: getSummary(state),
-        stage: state.stage,
-        options: await buildOptionsForStage(state),
-        state,
-      });
-      return;
+      const categoryMatch = findKpiCategoryByLabel(message);
+      if (!categoryMatch) {
+        res.json({
+          reply: "很抱歉，您咨询的问题已经超纲了。\n目前仅支持查询人员信息、工程师数量等指标。",
+          summary: getSummary(state),
+          stage: state.stage,
+          options: await buildOptionsForStage(state),
+          state,
+        });
+        return;
+      }
+      // If it matches a category, we fall through to the !payload block which handles it.
     }
   }
 
@@ -1146,11 +1092,14 @@ app.post("/api/chat", async (req, res) => {
 
   if (!payload) {
     let replyText = "";
+    console.log(`[NoPayload] Stage=${state.stage}, Msg=${message}`);
     if (state.stage === Stage.KPI_CATEGORY_SELECT) {
       const category = findKpiCategoryByLabel(message);
+      console.log(`[CategoryMatch] Found=${category ? category.id : 'null'}`);
       if (category) {
         state.kpiCategoryId = category.id;
         state.stage = Stage.KPI_METRIC_SELECT;
+        console.log(`[StateUpdate] NewStage=${state.stage}`);
         replyText = withSummary(
           `已选择：${category.label}。\n请选择二级指标：`,
           state
@@ -1161,12 +1110,77 @@ app.post("/api/chat", async (req, res) => {
           state
         );
       }
-    } else if (state.stage === Stage.TIME_TYPE_SELECT || state.stage === Stage.TIME_VALUE_SELECT) {
+    } else if (state.stage === Stage.TIME_TYPE_SELECT) {
+      // Validate Time Type
+      if (typeof message === "string") {
+          const validTypes = ["Month", "HalfFY", "FY", "month", "half_fy", "fy"];
+          const lowerMsg = message.trim().toLowerCase();
+          // Simple check if message contains keywords
+          if (validTypes.some(t => lowerMsg.includes(t.toLowerCase()))) {
+             // Fallback to auto-select if text matches? 
+             // Actually, if user types "Month", we can treat it as payload?
+             // But for now, let's just complain if it is completely off.
+             // Wait, if user types "202510", maybe they skipped the type selection?
+             // Let's stick to the requirement: "Ask again if not enum value"
+             const isEnum = ["month", "half_fy", "fy"].includes(lowerMsg) || ["Month", "HalfFY", "FY"].includes(message.trim());
+             if (!isEnum) {
+                 replyText = withSummary("输入无效。请点击按钮选择时间类型（Month, HalfFY, FY）。", state);
+                 res.json({
+                    reply: replyText,
+                    summary: getSummary(state),
+                    stage: state.stage,
+                    options: await buildOptionsForStage(state),
+                    state,
+                 });
+                 return;
+             }
+          } else {
+             replyText = withSummary("输入无效。请点击按钮选择时间类型（Month, HalfFY, FY）。", state);
+             res.json({
+                reply: replyText,
+                summary: getSummary(state),
+                stage: state.stage,
+                options: await buildOptionsForStage(state),
+                state,
+             });
+             return;
+          }
+      }
+    } else if (state.stage === Stage.TIME_VALUE_SELECT) {
       if (typeof message === "string") {
         let label = message.trim();
+        // Validation for time value format
+        // Month: 6 digits (YYYYMM)
+        // HalfFY: 6 chars (YYYYH1/2)
+        // FY: 4 digits (YYYY)
+        const isMonth = /^\d{6}$/.test(label);
+        const isHalfFy = /^\d{4}H[12]$/.test(label);
+        const isFy = /^\d{4}$/.test(label);
+        
+        let isValid = false;
+        if (state.timeType === 'month' && isMonth) isValid = true;
+        if (state.timeType === 'half_fy' && isHalfFy) isValid = true;
+        if (state.timeType === 'fy' && isFy) isValid = true;
+        
+        // If state.timeType is not set (should not happen in this stage usually), we might be lenient
+        if (!state.timeType && (isMonth || isHalfFy || isFy)) isValid = true;
+
+        if (!isValid) {
+             replyText = withSummary(`时间格式无效。请重新输入（当前类型: ${state.timeType || '未知'}）。\n示例：202506 (Month), 2025H1 (HalfFY), 2025 (FY)。`, state);
+             res.json({
+                reply: replyText,
+                summary: getSummary(state),
+                stage: state.stage,
+                options: await buildOptionsForStage(state),
+                state,
+             });
+             return;
+        }
+
         state.timeRange = {
           type: "custom",
           label,
+          value: label // Assume value matches label for custom input
         };
         state.stage = Stage.FILTER_DIMENSION_SELECT;
         replyText = withSummary("请选择筛选维度：", state);
@@ -1199,45 +1213,49 @@ app.post("/api/chat", async (req, res) => {
 
   const result = await handleButtonInput(state, payload, message);
   if (result.done) {
-     // If handleButtonInput returned a full response object (like from executeQuery)
-     // we should use it directly.
-     // But wait, executeQuery returns the structure { reply, summary, ... }
-     // handleButtonInput returns { reply: ... } or the full structure if we changed it?
-     // Let's check handleButtonInput return type.
-     // It returns { reply: ... } mostly.
-     // But we changed confirm_filter_values to return executeQuery(state).
-     // executeQuery returns { reply, summary, options, done, result, state }.
-     // So we need to be careful.
      res.json(result);
      return;
   }
   
-  const options = await buildOptionsForStage(state);
-  res.json({
-    reply: result.reply,
-    summary: result.summary || getSummary(state),
-    chartData: result.chartData,
-    stage: state.stage,
-    options,
-    done: result.done || false,
-    result: result.result || null,
-    state,
-  });
+  try {
+    const options = await buildOptionsForStage(state);
+    res.json({
+      reply: result.reply,
+      summary: result.summary || getSummary(state),
+      chartData: result.chartData,
+      stage: state.stage,
+      options,
+      done: result.done || false,
+      result: result.result || null,
+      state,
+    });
+  } catch (err) {
+    console.error("Error building options:", err);
+    res.json({
+      reply: result.reply + "\n\n(系统提示：加载选项失败，数据库连接异常。请联系管理员检查配置。)",
+      summary: result.summary || getSummary(state),
+      chartData: result.chartData,
+      stage: state.stage,
+      options: [],
+      done: result.done || false,
+      result: result.result || null,
+      state,
+      error: err.message
+    });
+  }
 });
 
 async function getDetailData(state) {
   const { where, params } = buildWhere(state);
   
-  // Find engineer_detail metric config to use its SQL
   const detailMetric = kpiCategories
       .flatMap(c => c.metrics)
       .find(m => m.id === "engineer_detail");
       
   let sql = detailMetric && detailMetric.sql 
       ? detailMetric.sql 
-      : "SELECT * FROM personnel_detail {where} ORDER BY update_month DESC, employee_id";
+      : "SELECT * FROM dws_tas_roster {where} ORDER BY st_WrMonth DESC, st_EmpID";
       
-  // Replace {where} placeholder
   sql = sql.replace("{where}", where);
   
   return db.query(sql, params);
@@ -1256,15 +1274,6 @@ app.get("/api/detail/download", async (req, res) => {
   }
   
   try {
-      // Check if current metric is an aggregate group (chart) type
-      // If so, we should probably download the aggregate data or the underlying detail?
-      // Requirement says "Download Detail" should save "screened detail results".
-      // Our getDetailData logic uses "engineer_detail" metric SQL by default if available.
-      // But if the user is currently viewing "Count by Product", the state.kpiMetricId is "engineer_count_by_product".
-      // The current getDetailData implementation ignores kpiMetricId and looks up "engineer_detail" config.
-      // This is correct for "downloading detail" regardless of current view.
-      // So no change needed here, just confirming logic.
-      
       const rows = await getDetailData(state);
       
       const workbook = new ExcelJS.Workbook();
