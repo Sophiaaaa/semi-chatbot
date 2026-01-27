@@ -316,6 +316,34 @@
             addMessage("bot", text, summary, null, chartData);
         }
 
+        function shouldSuppressBotReply(text) {
+            const t = String(text || "").trim();
+            if (!t) return false;
+            if (t.startsWith("数据库连接失败")) return true;
+            if (t.startsWith("数据库暂不可用")) return true;
+            if (t.includes("数据库连接异常")) return true;
+            if (t.includes("MySQL 未启动")) return true;
+            return false;
+        }
+
+        function setStatusNotice(text) {
+            const id = "statusNotice";
+            let el = document.getElementById(id);
+            if (!el) {
+                el = document.createElement("div");
+                el.id = id;
+                el.className = "mx-4 sm:mx-6 mt-4 px-4 py-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 shadow-sm";
+                el.style.whiteSpace = "pre-wrap";
+                messagesEl.parentElement.insertBefore(el, messagesEl);
+            }
+            const t = String(text || "").trim();
+            if (!t) {
+                el.remove();
+                return;
+            }
+            el.textContent = t;
+        }
+
         // --- Popover Logic ---
         function togglePopover(options, triggerBtn, isSingleSelect = false) {
             const isOpen = popoverMenu.classList.contains("open");
@@ -577,6 +605,8 @@
                 });
                 const data = await res.json();
 
+                setStatusNotice("");
+
                 // Special handling for popover trigger (Time Type selection)
                 if (popoverTrigger && data.options && data.options.length > 0) {
                     const isTimeValues = data.options.every(o => o.payload && o.payload.type === "time_value");
@@ -597,10 +627,15 @@
                     // Just render options (which happens below)
                 } else {
                     // NORMAL MODE
-                    if (pendingUserText) {
-                        addUserMessage(pendingUserText); // Flush pending message if it wasn't a selection step
+                    const replySuppressed = data.reply && shouldSuppressBotReply(data.reply);
+                    if (replySuppressed) {
+                        const s = String(data.summary || "").trim();
+                        setStatusNotice(s ? (data.reply + "\n\n" + s) : data.reply);
                     }
-                    if (data.reply) {
+                    if (pendingUserText && !replySuppressed) {
+                        addUserMessage(pendingUserText);
+                    }
+                    if (data.reply && !replySuppressed) {
                         addBotMessage(data.reply, data.summary, data.chartData);
                     }
                 }
@@ -631,8 +666,35 @@
             }
         });
 
-        newConversationBtn.addEventListener("click", () => initConversationId(true));
-        initConversationId(false);
+        function getInitialQuestionFromUrl() {
+            try {
+                const params = new URLSearchParams(window.location.search || "");
+                const q = params.get("q");
+                return q ? String(q) : null;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function clearUrlQuery() {
+            try {
+                window.history.replaceState({}, document.title, window.location.pathname);
+            } catch (e) {}
+        }
+
+        newConversationBtn.addEventListener("click", () => {
+            window.location.href = "/home";
+        });
+
+        const initialQ = getInitialQuestionFromUrl();
+        if (initialQ && initialQ.trim()) {
+            initConversationId(true);
+            clearUrlQuery();
+            addUserMessage(initialQ.trim());
+            fetchChat({ conversationId: conversationIdEl.value, message: initialQ.trim(), payload: null });
+        } else {
+            initConversationId(false);
+        }
     </script>
 </body>
 </html>

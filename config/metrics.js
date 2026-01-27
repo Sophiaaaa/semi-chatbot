@@ -61,7 +61,7 @@ const metricsConfig = {
           keywords: ["机台+数量", "设备+数量", "多少+机台", "多少+台"],
           kind: "aggregate",
           sql: "SELECT COUNT(*) AS value FROM dws_wisdom_machine {where} AND st_MachineClusterFlag='R'",
-          allowedTimeTypes: [], 
+          allowedTimeTypes: ["month"],
           allowedFilterDimensions: ["product", "customer"],
           dimensionMap: {
             product: "st_ProductLine"
@@ -75,7 +75,7 @@ const metricsConfig = {
             keywords: ["机台+明细", "设备+清单", "机台+列表"],
             kind: "detail",
             sql: "SELECT st_SN, st_ProductLine, st_BP, st_MachineModelName FROM dws_wisdom_machine {where} AND st_MachineClusterFlag='R'",
-            allowedTimeTypes: [],
+            allowedTimeTypes: ["month"],
             allowedFilterDimensions: ["product", "customer"],
             dimensionMap: {
                 product: "st_ProductLine"

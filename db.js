@@ -1,17 +1,36 @@
-require("dotenv").config();
+require("dotenv").config({ override: true });
 const mysql = require("mysql2/promise");
 
 // Database configuration
 const dbConfig = {
-  host: process.env.DB_HOST || "127.0.0.1",
-  port: parseInt(process.env.DB_PORT || "3306", 10),
-  user: process.env.DB_USER || "root",
-  password: process.env.DB_PASSWORD || "root", // User provided password
-  database: process.env.DB_NAME || "ServiceDX", // We will create this if it doesn't exist
+  host: process.env.MYSQL_HOST || process.env.DB_HOST || "127.0.0.1",
+  port: parseInt(process.env.MYSQL_PORT || process.env.DB_PORT || "3306", 10),
+  user: process.env.MYSQL_USER || process.env.DB_USER || "root",
+  password: process.env.MYSQL_PASSWORD || process.env.DB_PASSWORD || "root", // User provided password
+  database: process.env.MYSQL_DATABASE || process.env.DB_NAME || "ServiceDX", // We will create this if it doesn't exist
   multipleStatements: true,
 };
 
 let pool;
+
+function getPublicDbConfig() {
+  const userSource = process.env.MYSQL_USER ? "MYSQL_USER" : (process.env.DB_USER ? "DB_USER" : "default");
+  const databaseSource = process.env.MYSQL_DATABASE ? "MYSQL_DATABASE" : (process.env.DB_NAME ? "DB_NAME" : "default");
+  const hostSource = process.env.MYSQL_HOST ? "MYSQL_HOST" : (process.env.DB_HOST ? "DB_HOST" : "default");
+  const portSource = process.env.MYSQL_PORT ? "MYSQL_PORT" : (process.env.DB_PORT ? "DB_PORT" : "default");
+  return {
+    host: dbConfig.host,
+    port: dbConfig.port,
+    user: dbConfig.user,
+    database: dbConfig.database,
+    sources: {
+      host: hostSource,
+      port: portSource,
+      user: userSource,
+      database: databaseSource,
+    },
+  };
+}
 
 async function getPool() {
   if (pool) return pool;
@@ -193,4 +212,5 @@ async function query(sql, params) {
 
 module.exports = {
   query,
+  getPublicDbConfig,
 };

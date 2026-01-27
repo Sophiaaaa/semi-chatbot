@@ -15,6 +15,9 @@ app.use(express.json());
 app.get("/vendor/echarts.min.js", (req, res) => {
   res.sendFile(path.join(__dirname, "node_modules", "echarts", "dist", "echarts.min.js"));
 });
+app.get("/home", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "home.html"));
+});
 app.use(express.static("public"));
 
 const Stage = {
@@ -40,13 +43,20 @@ const kpiCategories = metricsConfig.categories;
 const conversations = new Map();
 
 async function getTimeOptions() {
-  const rows = await db.query(
-    "SELECT DISTINCT st_WrMonth FROM dws_tas_roster ORDER BY st_WrMonth",
-    []
-  );
-  const monthsRaw = rows
-    .map((r) => (r.st_WrMonth == null ? null : String(r.st_WrMonth)))
-    .filter((v) => v);
+  let monthsRaw = [];
+  try {
+    const rows = await db.query(
+      "SELECT DISTINCT st_WrMonth FROM (SELECT st_WrMonth FROM dws_tas_roster UNION SELECT st_WrMonth FROM dws_wisdom_machine) t ORDER BY st_WrMonth",
+      []
+    );
+    monthsRaw = rows
+      .map((r) => (r.st_WrMonth == null ? null : String(r.st_WrMonth)))
+      .filter((v) => v);
+  } catch (e) {
+    monthsRaw = Array.isArray(metricsConfig.timeExamples)
+      ? metricsConfig.timeExamples.map((m) => String(m)).filter((v) => v)
+      : [];
+  }
   monthsRaw.sort();
   const monthOptions = monthsRaw.map((m) => ({
     value: m,
@@ -253,6 +263,9 @@ function summarizeState(state) {
     }
   }
   let summary = `已选择指标：${kpiText}\n时间范围：${timeText}\n筛选条件：${filterText}`;
+  if (category && category.id === "machine") {
+    summary += `\n数据表：ServiceDX.dws_wisdom_machine（对应 SQL Server 写法：[ServiceDX].[dbo].[dws_wisdom_machine]）`;
+  }
   if (state.lastQuerySql) {
     summary += `\nSQL: ${state.lastQuerySql}`;
   }
@@ -280,6 +293,59 @@ function formatSqlForDisplay(sql, params) {
     formatted = formatted.replace("?", v);
   }
   return stripWhereStubForDisplay(formatted);
+}
+
+function applySqlServerStyleTableNames(formattedSql) {
+  return String(formattedSql || "");
+}
+
+function formatSqlForDisplayForState(state, sql, params) {
+  const formatted = formatSqlForDisplay(sql, params);
+  return formatted;
+}
+
+function toUserFacingDbError(err) {
+  const msg = (err && err.message) ? String(err.message) : "";
+  const code = err && err.code ? String(err.code) : "";
+  const cfg = typeof db.getPublicDbConfig === "function" ? db.getPublicDbConfig() : null;
+  const cfgText = cfg
+    ? `连接配置：${cfg.host}:${cfg.port} / user=${cfg.user} / db=${cfg.database}`
+    : null;
+  const srcText = cfg && cfg.sources
+    ? `来源：host(${cfg.sources.host}) port(${cfg.sources.port}) user(${cfg.sources.user}) db(${cfg.sources.database})`
+    : null;
+  const meta = [cfgText, srcText, code ? `错误码：${code}` : null].filter(Boolean).join("\n");
+  if (code === "ER_ACCESS_DENIED_ERROR") {
+    return "数据库连接失败：MySQL 返回 Access denied，通常是账号密码错误或用户 Host 不匹配（例如只允许 'vanna_user'@'%'，但实际是 'vanna_user'@'localhost'）。\n请检查 MySQL 用户与授权。" + (meta ? `\n${meta}` : "");
+  }
+  if (code === "ER_DBACCESS_DENIED_ERROR") {
+    return "数据库权限不足：当前账号无权访问 DB_NAME 指定的库，请检查账号授权。" + (meta ? `\n${meta}` : "");
+  }
+  if (code === "ER_TABLEACCESS_DENIED_ERROR") {
+    return "数据表权限不足：当前账号无权访问目标表，请检查账号对该表的 SELECT 权限。" + (meta ? `\n${meta}` : "");
+  }
+  if (/access denied/i.test(msg)) {
+    return "数据库访问被拒绝：请检查账号权限或账号密码。" + (meta ? `\n${meta}` : "");
+  }
+  if (code === "ECONNREFUSED" || /connect\s+ec?onnrefused/i.test(msg)) {
+    return "数据库连接失败：MySQL 未启动或端口不可达，请启动 MySQL 后重试。" + (meta ? `\n${meta}` : "");
+  }
+  if (code === "ER_BAD_DB_ERROR") {
+    return "数据库不存在：请检查 DB_NAME 是否正确，或先创建数据库。" + (meta ? `\n${meta}` : "");
+  }
+  return "数据库暂不可用，请稍后重试或联系管理员。";
+}
+
+function buildSqlPreviewForState(state) {
+  const category = kpiCategories.find((c) => c.id === state.kpiCategoryId);
+  const metric = category && category.metrics.find((m) => m.id === state.kpiMetricId);
+  if (!metric || !metric.sql) return null;
+  const { where, params } = buildWhere(state);
+  let sql = String(metric.sql).replace("{where}", where);
+  if (metric.kind === "detail") {
+    sql = sql + " LIMIT 50";
+  }
+  return formatSqlForDisplayForState(state, sql, params);
 }
 
 function buildWhere(state) {
@@ -349,6 +415,10 @@ function buildWhere(state) {
 async function executeQuery(state) {
   try {
     state.stage = Stage.EXECUTING_QUERY;
+    const previewSql = buildSqlPreviewForState(state);
+    if (previewSql) {
+      state.lastQuerySql = previewSql;
+    }
     const queryResult = await runQueryForState(state);
     state.lastQueryResult = queryResult.raw || null;
     state.lastQuerySql = queryResult.sql || null;
@@ -366,7 +436,7 @@ async function executeQuery(state) {
   } catch (e) {
     state.stage = Stage.SUMMARY_CONFIRM; // Fallback if error
     return {
-      reply: "执行数据库查询时出错：" + e.message,
+      reply: toUserFacingDbError(e),
       summary: getSummary(state),
       stage: state.stage,
       options: await buildOptionsForStage(state),
@@ -537,11 +607,10 @@ async function handleButtonInput(state, payload, textInput) {
                 }],
                 grid: { top: 30, bottom: 30, left: 40, right: 20 }
             };
-             state.lastQuerySql = formatSqlForDisplay(sql, params);
+             state.lastQuerySql = formatSqlForDisplayForState(state, sql, params);
 
              return {
                 reply: withSummary("已按产品为您生成图表：", state),
-                summary: getSummary(state), 
                 summary: getSummary(state), 
                 chartData: chartData
             };
@@ -647,9 +716,11 @@ function updateStageAndGetReply(state) {
       return withSummary("请先选择KPI大类：", state);
   }
   
-  const hasTimeConfig = metric && metric.allowedTimeTypes && metric.allowedTimeTypes.length > 0;
+  const timeRequired = category && category.id === "machine";
+  const hasTimeConfig = (metric && metric.allowedTimeTypes && metric.allowedTimeTypes.length > 0) || timeRequired;
   
-  if (!state.timeRange && hasTimeConfig) {
+  if ((!state.timeRange || state.timeRange.type === "none") && hasTimeConfig) {
+    state.timeRange = null;
     state.stage = Stage.TIME_TYPE_SELECT;
     return withSummary("已识别指标，请继续选择时间类型：", state);
   } else if (!state.timeRange && !hasTimeConfig) {
@@ -861,7 +932,7 @@ async function runQueryForState(state) {
     return {
       reply: "查询结果：" + metric.label + "为 " + value + " 。",
       raw: rows,
-      sql: formatSqlForDisplay(sql, params)
+      sql: formatSqlForDisplayForState(state, sql, params)
     };
   }
   
@@ -905,7 +976,7 @@ async function runQueryForState(state) {
     return {
       reply: metric.label + "如下：\n" + lines.join("\n"),
       raw: finalRows,
-      sql: formatSqlForDisplay(sql, params),
+      sql: formatSqlForDisplayForState(state, sql, params),
       chartData: chartData
     };
   }
@@ -917,7 +988,7 @@ async function runQueryForState(state) {
       return {
         reply: "未查询到符合条件的明细。",
         raw: rows,
-        sql: formatSqlForDisplay(displaySql, params)
+        sql: formatSqlForDisplayForState(state, displaySql, params)
       };
     }
     const lines = rows.map(r => {
@@ -928,7 +999,7 @@ async function runQueryForState(state) {
       reply:
         "查询到以下明细（最多显示 50 条）：\n" + lines.join("\n"),
       raw: rows,
-      sql: formatSqlForDisplay(displaySql, params)
+      sql: formatSqlForDisplayForState(state, displaySql, params)
     };
   }
   
@@ -941,56 +1012,10 @@ async function runQueryForState(state) {
 
 app.get("/api/time-options", async (req, res) => {
   try {
-    const rows = await db.query(
-      "SELECT DISTINCT st_WrMonth FROM dws_tas_roster ORDER BY st_WrMonth",
-      []
-    );
-    const monthsRaw = rows
-      .map((r) => (r.st_WrMonth == null ? null : String(r.st_WrMonth)))
-      .filter((v) => v);
-    monthsRaw.sort();
-    const monthOptions = monthsRaw.map((m) => ({
-      value: m,
-      label: m,
-    }));
-    const yearMap = new Map();
-    for (let i = 0; i < monthsRaw.length; i += 1) {
-      const m = monthsRaw[i];
-      if (m.length < 6) continue;
-      const year = m.slice(0, 4);
-      const monthNum = parseInt(m.slice(4), 10);
-      if (Number.isNaN(monthNum)) continue;
-      if (!yearMap.has(year)) {
-        yearMap.set(year, []);
-      }
-      yearMap.get(year).push(monthNum);
-    }
-    const fyOptions = [];
-    const halfFyOptions = [];
-    for (const [year, monthNums] of yearMap.entries()) {
-      fyOptions.push({
-        value: year,
-        label: year + " 财年",
-      });
-      const hasH1 = monthNums.some((v) => v >= 1 && v <= 6);
-      const hasH2 = monthNums.some((v) => v >= 7 && v <= 12);
-      if (hasH1) {
-        halfFyOptions.push({
-          value: year + "H1",
-          label: year + " 上半年",
-        });
-      }
-      if (hasH2) {
-        halfFyOptions.push({
-          value: year + "H2",
-          label: year + " 下半年",
-        });
-      }
-    }
-    fyOptions.sort((a, b) => String(a.value).localeCompare(String(b.value)));
-    halfFyOptions.sort((a, b) =>
-      String(a.value).localeCompare(String(b.value))
-    );
+    const timeOptions = await getTimeOptions();
+    const monthOptions = timeOptions.month || [];
+    const halfFyOptions = timeOptions.half_fy || [];
+    const fyOptions = timeOptions.fy || [];
     res.json({
       months: monthOptions,
       halfFy: halfFyOptions,
@@ -1206,6 +1231,21 @@ app.post("/api/chat", async (req, res) => {
     payload.type === "confirm_start" &&
     state.stage === Stage.SUMMARY_CONFIRM
   ) {
+    const category = kpiCategories.find((c) => c.id === state.kpiCategoryId);
+    if (category && category.id === "machine" && (!state.timeRange || state.timeRange.type === "none" || !state.timeRange.value)) {
+      state.timeRange = null;
+      state.stage = Stage.TIME_TYPE_SELECT;
+      res.json({
+        reply: withSummary("请先选择/输入时间范围：", state),
+        summary: getSummary(state),
+        stage: state.stage,
+        options: await buildOptionsForStage(state),
+        done: false,
+        result: null,
+        state,
+      });
+      return;
+    }
     const result = await executeQuery(state);
     res.json(result);
     return;
